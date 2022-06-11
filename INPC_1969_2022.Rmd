@@ -1,0 +1,653 @@
+---
+title: "INPC_1969_2022"
+author: "Tao Jesus Veloz"
+date: '2022-06-09'
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tseries)     
+library(forecast)
+library(ggfortify)
+library(ggplot2)
+
+library(xts)
+library(aTSA)
+library(fable)
+library(tsibble)
+library(plyr)
+
+library(reshape)
+library(RCurl)
+library(tsbox)
+library(readxl)
+
+
+
+```
+
+## Índice Nacional de Precios al Consumidor
+
+La elaboración y publicación del INPC se inició en 1969 por parte del Banco de México. A partir de esa fecha el INPC se ha actualizado en seis ocasiones, por lo que el Cambio de Año Base de 2010 a 2018, fue la séptima actualización
+
+El INPC se ha consolidado como uno de los principales indicadores del desempeño económico del país; 
+Además de su utilización como medida de la inflación, cabe destacar su uso como:
+
+*Factor de actualización de los créditos fiscales.
+
+*Determinante del valor de la Unidad De Inversión (UDI).
+
+*Factor para actualizar la Unidad de Medida y Actualización (UMA)
+
+Mediante los índices, se puede obtener la viariación porcentual de cualquier periodo utilizando la siguiente fórmula:
+Variación = (Valor del índice en el periodo actual / Valor del indice en el periodo anterior - 1) * 100
+
+Ejemplo 1: Para obtener la variación anual del INPC de cualquier periodo, en este caso de diciembre de 2016 contra el mismo periodo del año anterior, se obtiene de la siguiente forma:
+
+Valor del INPC en diciembre de 2016: 122.515
+Valor del INPC en diciembre de 2015: 118.532
+
+Variación = ( 122.515 / 118.532 - 1 ) * 100 = 3.36
+
+### Ajustes inflacionarios
+
+Los datos afectados por el valor del dinero en el tiempo se deben ajustar antes de modelarse. Esto se debe a la inflación: sus abuelos podían comprar una coca y un gansito tal vez con menos de 3 pesos. ¿Cuánto dinero necesitarían hoy para comprar una coca y un gansito? Entonces, las series de tiempo financieras se ajustan a la inflación, y se expresan en términos de alguna moneda constante (en el tiempo). Por ejemplo, se puede medir el valor de la vivienda en Gudalajara, con precios constantes de 2010 (imaginando que no hubiera cambiado el valor del dinero en el tiempo).
+
+Para realizar el ajuste inflacionario, se toma un índice de precios. Si $z_t$ es el índice de precios y $y_t$ es el valor original de la vivienda en el tiempo $t$, entonces el precio de la vivienda, $x_t$, ajustado a valor del año 2010,  estaría dado por:
+
+$$
+x_t = \frac{y_t}{z_t} * z_{2010}
+$$
+
+```{r , echo=FALSE, warning=FALSE}
+
+datos <- read_excel("INPC_1969_2022.xlsx", 
+                    col_types = c("date", "numeric"))
+
+datos <- ts(datos$Indice_Mensual, st = c(1969,1),end = c(2020,12),freq = 12)
+
+summary(datos)
+sd(datos)
+var(datos)
+
+dif_datos <- diff(datos)
+log_datos <- log(datos)
+
+
+ggplot2::autoplot(dif_datos, ts.colour = "blue",
+                  ts.linetype = "dashed") +
+  ggtitle("INPC Primera Diferencia") +
+  xlab("Año") + ylab("Variacion Indice") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+ # Se puede ver una inlfacion estable
+
+```
+
+
+```{r,  echo=FALSE, warning=FALSE}
+
+library(tseries)
+
+adf.test(log_datos)
+
+# la serie es estable 
+
+library(latticeExtra)
+library(RColorBrewer)
+library(lattice)
+
+
+asTheEconomist(xyplot(datos,
+                      main="INPC 1969-2022")
+               ,xlab="Año_mes",ylab="Indice")
+
+datos.descompuesta<-decompose(datos, type = "additive")
+autoplot(datos.descompuesta)
+
+
+```
+
+Las series de tiempo pueden presentar varios patrones, y comúnmente es útil dividir o descomponer la serie en cada uno de esos patrones. Recordando, una serie de tiempo puede exhibir:
+
+* Tendencia
+* Estacionalidad
+* Ciclos
+
+Al realizar la descomposición de la serie, usualmente se juntan el patrón cíclico y la tendencia en uno solo, llamado simplemente **tendencia**. Así, tendríamos tres componentes en una serie de tiempo cualquiera:
+
+1. Tendencia
+2. Estacionalidad
+3. Residuo (lo que no es parte ni de la tendencia, ni del efecto estacional)
+
+
+
+### Diferenciación
+
+ *Una manera de convertir una serie en estacionaria es calculando las diferencias entre observaciones consecutivas*. A esto se le llama **diferenciar** la serie.
+
+$$y_{t}^{\prime}=y_{t}-y_{t-1}$$
+
+Los datos en primeras diferencias tendrán $T - 1$ observaciones, porque no es posible calcular la diferencia para la primera observación.
+
+* Las transformaciones logarítmicas pueden ayudar a **estabilizar la varianza** de una serie.
+
+* La diferenciación puede ayudar a **estabilizar la media** de una serie de tiempo, al quitar los cambios de nivel en ella y reducir o eliminar tendencia o estacionalidad.
+
+Otra forma de determinar gráficamente si una serie de tiempo es estacionaria o no, es viendo su función de autocorrelación, ACF. Para una serie de tiempo estacionaria, la ACF se vuelve cero rápidamente, mientras que una serie no estacionaria decae lentamente y el valor del primer rezago es muy alto y positivo.
+
+
+
+### Diferenciación de segundo orden
+
+A veces, la serie diferenciada parecerá seguir siendo no estacionaria, por lo que se puede recurrir a las **segundas diferencias**. Esto es, diferenciar las primeras diferencias:
+
+$$\begin{aligned}
+y_{t}^{\prime \prime} &=y_{t}^{\prime}-y_{t-1}^{\prime} \\
+&=\left(y_{t}-y_{t-1}\right)-\left(y_{t-1}-y_{t-2}\right) \\
+&=y_{t}-2 y_{t-1}+y_{t-2}
+\end{aligned}$$
+
+La serie en segundas diferencias tendrá $T-2$ observaciones. La interpretacion de $y_{t}^{\prime \prime}$ es que representa *los cambios en los cambios* de la serie.
+
+
+
+### Pruebas de raíz unitaria
+
+Para poder determinar más formalmente si una serie es estacionaria o no, se pueden llevar a cabo pruebas de **raíz unitaria**.
+
+Existen muchas pruebas distintas de raíz unitaria. Utilizaremos, por lo pronto la prueba propuesta por *Kwiatkowski-Phillips-Schmidt-Shin*, o prueba KPSS en corto. Aquí, la $H_0$ es que la serie es estacionaria. Por lo tanto, un *p-value* alto indicará que sí es estacionaria, mientras que un *p-value* $<\alpha$ indicará que la serie no es estacionaria.
+
+
+```{r,  echo=FALSE, warning=FALSE}
+
+# Una forma de hacer estacionaria una serie es trabajar 
+# con las diferencias
+pacf(dif_datos)
+acf(diff(datos))
+
+#test de Dickey fuller
+adf.test(diff(datos))
+
+```
+# Estacionariedad y diferenciación
+
+Una serie de tiempo **estacionaria** es aquella en la cual sus propiedades no dependen del tiempo en que son medidas. Por lo tanto, una serie con tendencia y/o estacionalidad no es estacionaria. 
+
+Sin embargo, una serie con un comportamiento cíclico sí es estacionaria, ya que la ciclicidad no es de un periodo de tiempo fijo.
+
+En general, una serie de tiempo estacionaria no tendrá patrones predecibles en el largo plazo. Gráficas de tiempo de series estacionarias mostrarán series horizontales (con o sin ciclos), y con una **varianza constante**.
+
+
+
+
+
+### Características de la función de autocorrelación, ACF
+
+La función `feat_acf()` provee características interesantes acerca de una serie de tiempo:
+
+* El primer coeficiente de autocorrelación de los datos originales, `acf1`.
+* La suma del cuadrado de los primeros 10 coeficientes de autocorrelación, de los datos originales, `acf10`. Este coeficiente nos dice qué tanta autocorrelación tiene la serie, sin importar el rezago.
+* El primer coeficiente de autocorrelación de las primeras diferencias, `diff1_acf1`.
+* La suma del cuadrado de los primeros 10 coeficientes de autocorrelación, de las primeras diferencias, `diff1_acf10`.
+* El primer coeficiente de autocorrelación de las segundas diferencias, `diff2_acf1`.
+* La suma del cuadrado de los primeros 10 coeficientes de autocorrelación, de las segundas diferencias, `diff2_acf10`.
+* Para datos estacionales, también se obtiene el coeficiente de autocorrelación en el primer rezago estacional.
+
+
+
+
+# Modelos AR y MA
+## Modelos autorregresivos (AR)
+
+Un modelo autorregresivo de orden *p* se define como
+
+$$y_{t}=\phi_0+\phi_{1} y_{t-1}+\phi_{2} y_{t-2}+\cdots+\phi_{p} y_{t-p}+\varepsilon_{t}$$
+donde $\varepsilon_{t}$ es ruido blanco. Si observamos bien la ecuación, se asemeja mucho a una ecuación de regresión lineal múltiple, con la diferencia de que, ahora, los parámetros no son $\beta$, sino $\phi$ y que las regresoras (variables $x$), ahora son valores rezagados de la variable dependiente, $y_t$. Este sería un **modelo AR(*p*)**: modelo autorregresivo de orden *p*.
+
+Para un modelo **AR(1):** $y_{t}=\phi_0+\phi_{1} y_{t-1}+ \varepsilon_{t}$, tenemos algunas situaciones, dependiendo los valores de $\phi_0$ y $\phi_1$:
+
+* Si $\phi_1 = 0$, la serie es equivalente a un **ruido blanco** ($y_{t}=\phi_0+ \varepsilon_{t}$).
+
+* Si $\phi_1 = 1$ y $\phi_0 = 0$, la serie es equivalente a una **caminata aleatoria**.
+
+* Si $\phi_1 = 1$ y $\phi_0 \neq 0$, la serie es equivalente a una **caminata aleatoria con deriva**.
+
+* Si $\phi_1 \lt 0$, $y_t$ tiende a oscilar alrededor de su media.
+
+Dos ejemplos de modelos autorregresivos:
+
+
+## Modelos de media móvil (MA)
+
+Los modelos autorregresivos utilizan las observaciones pasadas para modelar. Los modelos de media móvil utilizan los **errores o residuos pasados** para modelar el pronóstico. 
+
+$$y_{t}=\theta_0 +\varepsilon_{t}+\theta_{1} \varepsilon_{t-1}+\theta_{2} \varepsilon_{t-2}+\cdots+\theta_{q} \varepsilon_{t-q}$$
+$\varepsilon_{t}$ es ruido blanco y a esto se le conoce como un modelo **MA(*q*)** de orden *q*.
+
+Los modelos de media móvil buscan pronosticar valores futuros.
+
+# Modelos ARIMA no estacionales
+
+Si juntamos lo visto hasta ahora (diferenciación, modelos autorregresivos y de media móvil), obtenemos un modelo ARIMA no estacional.
+
+ARIMA es el acrónimo de "AutoRegressive Integrated Moving Average", o modelo AutoRegresivo integrado de Media Móvil. El modelo puede ser escrito así:
+
+$$y_{t}^{\prime}=c+\phi_{1} y_{t-1}^{\prime}+\cdots+\phi_{p} y_{t-p}^{\prime}+\theta_{1} \varepsilon_{t-1}+\cdots+\theta_{q} \varepsilon_{t-q}+\varepsilon_{t}$$
+
+donde $y_{t}^{\prime}$ es la serie diferenciada, y del lado derecho de la ecuación tenemos los términos autorregresivos (observaciones pasadas) y de media móvil (errores pasados). Estos se llaman, valores y errores rezagados, respectivamente. El modelo ARIMA entonces tiene tres órdenes distintos **ARIMA(*p*,*d*,*q*)**, donde:
+
+* *p* = orden del componente autorregresivo
+* *d* = orden de diferenciación de la serie para hacerla estacionaria
+* *q* = orden del componente de media móvil
+
+Varios modelos de los que hemos visto hasta ahora se pueden expresar como casos particulares de un modelo ARIMA:
+
+| Modelo                        | Especificación ARIMA       |
+|:-----------------------------:|:---------------------------|
+| Ruido blanco (WN)             | ARIMA(0,0,0)               |
+| Caminata aleatoria (RW)       | ARIMA(0,1,0) sin constante |
+| RW con deriva (RW with drift) | ARIMA(0,1,0) con constante |
+| Modelo autorregresivo (AR)    | ARIMA(*p*,0,0)             |
+| Modelo de media móvil (MA)    | ARIMA(0,0,*q*)             |
+
+En un modelo ARIMA, los valores de la constante, *c* y el orden de integración, *d*, pueden tener efectos importantes en el pronóstico de largo plazo:
+
+* Si $c = 0$ y $d = 0$, los pronósticos de l.p. se irán a cero.
+* Si $c = 0$ y $d = 1$, los pronósticos de l.p. se irán a una constante distinta de cero.
+* Si $c = 0$ y $d = 2$, los pronósticos de l.p. seguirán una línea recta.
+* Si $c \neq 0$ y $d = 0$, los pronósticos de l.p. se irán a la media de los datos.
+* Si $c \neq 0$ y $d = 1$, los pronósticos de l.p. seguirán una línea recta.
+* Si $c \neq 0$ y $d = 2$, los pronósticos de l.p. seguirán una tendencia cuadrática.
+
+El valor de *d* también afecta los intervalos de predicción: entre más grande el valor de *d*, más rápido se incrementarán los intervalos de predicción.
+
+## Función de autocorrelación y autocorrelación parcial
+
+Generalmente, es muy difícil identificar el orden *p* y *q* de una serie de tiempo a simple vista. Por lo tanto, utilizamos las funciones ACF y PACF para intentar escoger esos valores *p* y *q*.
+
+Los datos pueden seguir un modelo ARIMA(*p,d*,0) si:
+
+* La ACF decae exponencialmente o tiene un comportamiento senoidal.
+* La PACF tiene un pico significativo en el rezago *p*, y posteriormente ya tienden a cero.
+
+
+Por el contrario, los datos pueden seguir un ARIMA(0,*d,q*) si:
+
+* La PACF decae exponencialmente o tiene un comportamiento senoidal.
+* La ACF tiene un pico significativo en el rezago *q*, y posteriormente ya tienden a cero.
+
+En resumen, **la PACF nos sirve para encontrar el orden *p* y la ACF para el orden *q*.**
+
+
+
+```{r,  echo=FALSE, warning=FALSE}
+
+modelo1 <-arima(datos, order = c(6,1,7), method = "ML");modelo1
+Box.test(residuals(modelo1), type = "Ljung-Box")
+
+modelo2 <-arima(datos, order = c(3,1,4), method = "ML");modelo2
+Box.test(residuals(modelo2), type = "Ljung-Box")
+
+
+modelo3 <-arima(datos, order = c(2,1,3), method = "ML");modelo3
+Box.test(residuals(modelo3), type = "Ljung-Box")# jalo
+
+modelo4 <-arima(datos, order = c(1,1,2), method = "ML");modelo4
+Box.test(residuals(modelo4), type = "Ljung-Box")
+
+modelo5 <-arima(datos, order = c(1,1,1));modelo5
+Box.test(residuals(modelo5), type = "Ljung-Box")
+predicc_m5 <- forecast::forecast(modelo5,h=36);predicc_m5
+
+modelo6 <-arima(datos, order = c(0,1,1));modelo6
+Box.test(residuals(modelo6), type = "Ljung-Box")
+
+modelo7 <-arima(datos, order = c(1,1,0));modelo7
+Box.test(residuals(modelo7), type = "Ljung-Box")# that's good
+
+tsdiag(modelo7)
+error <- residuals(modelo7)
+plot(error)
+
+```
+
+
+Un test relacionado y que, generalmente, es más preciso es el test de Ljung-Box.
+
+$$
+Q^{*}=T(T+2) \sum_{k=1}^{h}(T-k)^{-1} r_{k}^{2}
+$$
+
+En este caso es igual: valores grandes de $Q^{*}$ son indicios de que las autocorrelaciones no provienen de ruido blanco.
+
+> Entonces, la hipótesis nula de estas pruebas es que la serie en cuestión **no está autocorrelacionada**. En otras palabras, la $H_0$ dice que **la serie es ruido blanco**. Si $\alpha$ es el nivel de significancia (el nivel máximo de error que estamos dispuestos a aceptar) y si el ¨*p-value* $< \alpha$, entonces **rechazamos $H_0$**, de lo contrario, no rechazamos la $H_0$.
+
+
+
+
+# Valores ajustados *(fitted)* y residuales
+
+
+Cada observación en una serie de tiempo puede ser pronosticada utilizando los datos históricos previos. A estos se les conoce como valores ajustados (o *fitted*), $\hat{y}_t$.
+
+Los residuales en un modelo de series de tiempo es la información que el modelo no logró capturar. Esto es, es la diferencia entre los valores reales y los valores ajustados.
+
+$$
+e_{t}=y_{t}-\hat{y}_{t}
+$$
+
+
+Es muy importante analizar los residuos para determinar si nuestros modelos están bien ajustados. Si logramos detectar patrones en los residuales, puede ser indicio de que el modelo puede mejorarse.
+
+# Diagnóstico de residuales
+
+Un buen modelo de pronóstico va a producir residuales con las siguientes características:
+
+1. **No están autocorrelacionados**. Si se detectan correlaciones entre residuos, todavía hay información útil que se debe modelar.
+
+2. **La media de los residuos es cero**. Si la media es distinta de cero, entonces el pronóstico está sesgado.
+
+
+3. Los residuos tienen una varianza constante.
+
+4. Los residuos se distribuyen de manera normal.
+
+
+
+```{r,  echo=FALSE, warning=FALSE}
+library(forecast)
+
+#predicc_m7 <- forecast::forecast(modelo7,h=36);predicc_m7
+
+predicc_m4 <- forecast::forecast(modelo4,h=36);predicc_m4
+
+```
+
+```{r ,  echo=FALSE, warning=FALSE}
+propuesta.auto<-auto.arima(datos)
+propuesta.auto
+Box.test(residuals(propuesta.auto), type = "Ljung-Box")
+```
+
+
+## Selección de modelos ARIMA
+
+Una manera de escoger entre dos modelos distintos de los mismos datos es a través de los criterios de información:
+
+* Criterio de información de Akaike (AIC).
+* Criterio de información de Akaike corregido por sesgo de muestras pequeñas ($AIC_c$).
+* Criterio de información Bayesiano (BIC).
+
+Se sugiere utilizar el $AIC_c$. Recordando, entre menor sea el valor de los criterios de información, mejor ajuste tendrá el modelo.
+
+
+# Metodología Box-Jenkins
+
+¿Cómo se escoge el orden del modelo (*p,d,q*)? Se pueden seguir los siguientes pasos para intentar encontrar el modelo ARIMA óptimo para una serie de tiempo no estacional. Es un proceso iterativo y, en cierto grado, de prueba y error:
+
+1. Graficar los datos e identificar observaciones inusuales.
+
+2. Si es necesario, transformar los datos para estabilizar la varianza.
+    - Comúnmente se utilizará una transformación Box-Cox.
+
+3. Si la serie es no estacionaria, diferenciarla hasta convertirla en estacionaria.
+    - Aquí entran las pruebas de raíz unitaria como la KPSS.
+
+4. Revisar las gráficas de las funciones ACF y PACF y decidir los órdenes *p,q*.
+
+5. Ajuste el modelo escogido y revise la $AIC_c$ correspondiente para comparar vs. otros modelos.
+
+6. Lleve a cabo el diagnóstico de residuos.
+    - Grafique la ACF y los tests de portmanteau. Si los residuos no parecen ruido blanco, intente refinando el modelo.
+
+7. Una vez que se cuenta con residuos similares a ruido blanco, realizar los pronósticos.
+
+
+
+
+
+
+
+```{r,  echo=FALSE, warning=FALSE}
+energeticos_ <- read_excel("INPC_1969_2022.xlsx", 
+                           sheet = "Hoja2", col_types = c("date", "numeric"))
+
+energeticos_ <- ts(energeticos_$Indice_energeticos, st = c(1982,1),end = c(2020,12),freq = 12)
+plot(energeticos_)
+
+
+summary(energeticos_)
+sd(energeticos_)
+var(energeticos_)
+
+dif_energeticos_ <- diff(energeticos_)
+log_energeticos_ <- log(energeticos_)
+
+
+ggplot2::autoplot(dif_energeticos_, ts.colour = "blue",
+                  ts.linetype = "dashed") +
+  ggtitle("INPC Energeticos Primera Diferencia") +
+  xlab("Año") + ylab("Variacion Indice") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+
+```
+
+```{r,  echo=FALSE, warning=FALSE}
+library(tseries)
+
+adf.test(dif_energeticos_)
+adf.test(log_energeticos_)
+
+# la serie es estable 
+
+library(latticeExtra)
+library(RColorBrewer)
+library(lattice)
+
+
+asTheEconomist(xyplot(energeticos_,
+                      main="INPC 1969-2022 Componente_Energeticos")
+               ,xlab="Año_mes",ylab="Indice")
+
+energeticos_descompuesta<-decompose(energeticos_, type = "additive")
+autoplot(energeticos_descompuesta)
+
+```
+
+```{r,  echo=FALSE, warning=FALSE}
+# Una forma de hacer estacionaria una serie es trabajar 
+# con las diferencias
+pacf(dif_energeticos_)
+acf(diff(energeticos_))
+
+```
+```{r,  echo=FALSE, warning=FALSE}
+
+automodelo <-auto.arima(energeticos_);automodelo
+Box.test(residuals(automodelo), type = "Ljung-Box")
+
+modelo415 <-arima(energeticos_, order = c(4,1,5), method = "ML");modelo415
+Box.test(residuals(modelo415), type = "Ljung-Box")# si jala
+
+tsdiag(modelo415)
+error <- residuals(modelo415)
+plot(error)
+
+
+```
+
+
+```{r,  echo=FALSE, warning=FALSE}
+predicc_m415 <- forecast::forecast(modelo415,h=36);predicc_m415
+
+
+```
+
+```{r,  echo=T, warning=FALSE}
+datos_ <- read_excel("INPC_1969_2022.xlsx", 
+                           sheet = "Hoja1", col_types = c("date", "numeric"))
+
+y <-ts(datos_$Indice_Mensual, st = c(1982,1), end = c(2020,12),
+       freq = 12)
+
+PP.test(y)#
+PP.test(energeticos_)
+```
+
+
+
+
+
+
+```{r}
+
+dif_y <- diff(y)
+# Las series con la primera diferencia son estacionarias
+PP.test(dif_y)
+PP.test(dif_energeticos_)
+
+y <- dif_y
+x <- dif_energeticos_
+
+bfx <- as.matrix(cbind(y,x))
+po.test(bfx)
+
+#En este caso p_value < 0.05 por lo tanto rechazamos la hipótesis
+# nula, existe evidencia para sostener que las series son cointegradas, 
+#es decir que hay una tendencia a largo plazo.
+
+```
+
+
+```{r}
+ggplot2::autoplot(dif_y, ts.colour = "blue",
+                  ts.linetype = "dashed") +
+  ggtitle("INPC 1982-2020 Primera Diferencia") +
+  xlab("Año") + ylab("Variacion Indice") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+
+En la literatura podemos encontrar muchos nombres para las variables $y$ ^ $x$. P. ej.
+
+| $y$ (var. de pronóstico) | $x$ (vars. predictoras) |
+|:------------------------:|:-----------------------:|
+| Var. dependiente         |  Vars. independientes   |
+| Explicada                |  Explicativas           |
+| Regresada                |  Regresoras             |
+| Respuesta                |  Estímulo               |
+| Resultado                |  Covariante             |
+| Controlada               |  De control             |
+
+
+# El modelo lineal
+
+El caso más sencillo sería un **modelo de regresión lineal simple**, de la forma:
+
+$$
+y_t = \beta_0 + \beta_1 x_t + \varepsilon_t
+$$
+
+donde 
+
+* $\beta_0$ es conocido como el *intercepto* y representa el **valor predicho cuando $x = 0$.** 
+
+* $\beta_1$ es la *pendiente* de la recta. Nos indica el **cambio promedio en $y$, ante un cambio en una unidad de $x$**.
+
+* El término de error, $\varepsilon_t$ se asume aleatorio y decimos que captura los cambios debido a todas las otras variables que pudieran llegar a afectar a $y_t$, que no están explícitamente especificadas en el modelo.
+
+La recta resultante está dada entonces por $\beta_0 + \beta_1 x_t$, y la diferencia que existe en los puntos reales y ésta es $\varepsilon_t$.
+
+
+![*[(Hyndman, 2019)](https://otexts.com/fpp3/)*]
+
+
+
+Recordando, un modelo de regresión tiene la forma general
+
+$$y_{t}=\beta_{0}+\beta_{1} x_{1, t}+\cdots+\beta_{k} x_{k, t}+\varepsilon_{t}$$
+
+donde $y_t$ es la variable que queremos pronosticar, $x_{k, t}$ son las variables independientes que utilizábamos para explicar a $y_t$ y $\varepsilon_{t}$ es el término de error no correlacionado (ruido blanco).
+
+
+
+
+
+```{r}
+
+mmC1 <- lm(formula= y ~ x)
+summary(mmC1)
+
+residuales <- mmC1$residuals
+summary(residuales)
+
+autoplot(mmC1)
+
+
+```
+
+
+```{r}
+adf.test(residuales)
+
+library(urca)
+yy<-ur.df(residuales, type="trend",selectlags="AIC")
+
+summary(yy)
+
+```
+
+
+# Pronóstico
+
+Para llevar a cabo pronósticos de modelos de regresión con errores ARIMA, se necesita realizar el pronóstico de
+
+* la parte de la regresión
+* la parte de los errores ARIMA
+
+y combinar los resultados.
+
+Una característica con estos modelos, es que necesitamos pronósticos de las variables independientes $x_t$ o predictoras para poder pronosticar nuestra variable de interés, $y_t$. Cuando las predictoras son conocidas en el futuro, como variables de calendario (tiempo, día de la semana, mes, etc.), no hay mayor problema. Pero, cuando son desconocidas, tenemos que o modelarlas por separado, o asumir valores futuros para cada una.
+
+
+**NOTA:** Los intervalos de predicción de modelos de regresión (regresión lineal múltiple o modelos con errores ARIMA), no toman en cuenta la incertidumbre de las predictoras. Así, el modelo *asume* que esas predicciones son correctas. En otras palabras, los intervalos de predicción son condicionales al cumplimiento de los valores de las predictoras.
+
+
+
+
+Recordando, un modelo de regresión tiene la forma general
+
+$$y_{t}=\beta_{0}+\beta_{1} x_{1, t}+\cdots+\beta_{k} x_{k, t}+\varepsilon_{t}$$
+
+donde $y_t$ es la variable que queremos pronosticar, $x_{k, t}$ son las variables independientes que utilizábamos para explicar a $y_t$ y $\varepsilon_{t}$ es el término de error no correlacionado (ruido blanco).
+
+
+
+El término de regresión fue acuñado por primera vez por Francis Galton en 1886. Él estaba estudiando la relación que existe entre la estatura de los hijos y la estatura de los padres.
+
+Lo que encontró fue lo siguiente, en resumen:
+
+* Los padres más altos, tendían a tener hijos más altos, mientras que los padres bajos tendían a tener hijos bajos.
+
+* En promedio, los hijos de padres altos no logran ser más altos que ellos. Similarmente, los hijos de padres bajos, en promedio son más altos que sus papás.
+
+* Así, Galton decía que había una tendencia a **regresar** a la estatura promedio.
+
+
+
+Entonces, *el análisis de regresión en tiempos modernos trata sobre la relación de la dependencia entre una variable $y$, respecto de una o más variables exógenas (regresoras $x$) para predecir el valor promedio de la variable dependiente.*
+
+
+
+
